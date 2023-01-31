@@ -10,7 +10,7 @@ function [ D ] = PTU_PCA( t,X,K,K_pca,d,opt )
 % Output:
 % D: n*n proximity graph.
 
-% Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
+% Author: Ruoxu Tan; date: 2023/Jan/31; Matlab version: R2020a.
 
 if K_pca < d
     error('K_pca is smaller than the intrinsic dimension.')
@@ -105,17 +105,15 @@ for i = 1:n
     end
 end
  
-%% Tangent spaces and parallel transport  
-Cov = cell(1,n);
-mu = cell(1,n);
+%% Tangent spaces and parallel transport    
 TM = cell(1,n); % Tangent spaces
 for i = 1:n
     [~,ind] = sort(G_s(i,:));
-    mu{1,i} = mean(X_d(:,ind(2:K_pca+1)),2);
-    X_i_cen = X_d(:,ind(2:K_pca+1))-mu{1,i}; 
-    Cov{1,i} = X_i_cen * X_i_cen' ./ K_pca; 
-    [phi_i,~,~] = pcacov(Cov{1,i});
-    TM{1,i} = phi_i(:,1:d);
+    mu_i = mean(X_d(:,ind(2:K_pca+1)),2);
+    X_i_cen = X_d(:,ind(2:K_pca+1))-mu_i; 
+    X_i_cen = X_i_cen';
+    [~,~,phi_i] = svds(X_i_cen,d);
+    TM{1,i} = phi_i;
 end
 
 % Discrete parallel transport
