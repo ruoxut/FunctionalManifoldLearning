@@ -12,7 +12,7 @@ function [ X_d,G,n_com ] = graph_clustering( t,X,D,g,d,n_start )
 % n_com: number of components;
 % G: 1*n group labels.
 
-% Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
+% Author: Ruoxu Tan; date: 2023/Feb/8; Matlab version: R2020a.
 
 if nargin < 6
     n_start = 20;
@@ -44,12 +44,9 @@ for i = 1:n_com
     D_sq = D(G_com==i,G_com==i).^2;
     n_i = size(D_sq,1);
     G_cen = -0.5 * (eye(n_i)-(1/n_i) * ones(n_i,1) * ones(1,n_i)) * D_sq * (eye(n_i)-(1/n_i) * ones(n_i,1) * ones(1,n_i));
-    [phi,lambda,~] = pcacov(G_cen); 
-    if n_i > d  
-        X_d{1,i} = sqrt(lambda(1:d,1)) .* phi(:,1:d)';
-    else
-        X_d{1,i} = sqrt(lambda(:,1)) .* phi';
-    end
+    [phi,lambda,~] = eigs(G_cen,d,'largestreal'); 
+    lambda = diag(lambda); 
+    X_d{1,i} = sqrt(lambda) .* phi';  
     L(1,i) = size(X_d{1,i},2); % Sample size in ith component
 end
 
