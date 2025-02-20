@@ -13,12 +13,12 @@ function [ d ] = dim( t,X,delta )
 
 % Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
 
-if delta >= 1 || delta < 0
-    error('delta must be in (0,1).')
-end
-
 if nargin < 3
     delta = 0.9;
+end
+
+if delta >= 1 || delta < 0
+    error('delta must be in (0,1).')
 end
 
 n = size(X,2);
