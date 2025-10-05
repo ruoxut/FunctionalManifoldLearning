@@ -24,7 +24,7 @@ if length(t) ~= size(X,2)
     error('Dimensions of the input functional data do not match.')
 end
 
-
+%% FPCA
 delta_t = mean(diff(t)); 
 n = size(X,1);
 mu = mean(X,1);
