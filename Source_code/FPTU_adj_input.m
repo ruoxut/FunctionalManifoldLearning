@@ -1,16 +1,17 @@
-function [ D ] = PTU_PCA( t,X,K,K_pca,d,opt )
-% Parallel transport unfolding applied on functional principal scores.
+function [ D,Path ] = FPTU_adj_input( t,X,G_adj,K_pca,d,opt )
+% Functional parallel transport unfolding.
 % Input:
 % t: 1*p time interval;
-% X: n*p data matrix, each column contains function values of an individual;
-% K: number of nearest neighbours;
+% X: n*p data matrix, each row contains function values of an individual; 
+% G_adj: n*n adjacency matrix, (i,j)=1 (0) means i and j are adjecent (not adjecent).
 % K_pca: number of nearest neighbours used in local PCA;
 % d: intrinsic dimension;
-% opt: 1 rescale; otherwise not rescale.
+% opt: =1 means rescale; otherwise not rescale;
 % Output:
 % D: n*n proximity graph.
+% Path: n*n cell, (i,j)-cell contains the shortest path indices from i to j.
 
-% Author: Ruoxu Tan; date: 2023/Jan/31; Matlab version: R2020a.
+% Author: Ruoxu Tan; date: 2023/Jul/1; Matlab version: R2020a.
 
 if K_pca < d
     error('K_pca is smaller than the intrinsic dimension.')
@@ -24,48 +25,19 @@ if length(t) ~= size(X,2)
     error('Dimensions of the input functional data do not match.')
 end
 
-
-delta_t = mean(diff(t)); 
 n = size(X,1);
-mu = mean(X,1);
-X_cen = X - mu;
-Cov = X_cen' * X_cen / n;
-[phi,~,expd] = pcacov(Cov);
-norm_phi = sqrt(sum(phi.^2.*delta_t,1));       
-phi = phi ./ norm_phi;
-phi = phi'; 
-
-d = 1;
-s = expd(1);
-while s<95
-    d = d+1;
-    s = s+expd(d);
-end
-
-X_d = zeros(n,d);
-for i = 1:n
-    xi = sum(X_cen(i,:).*phi(1:d,:).*delta_t,2);
-    X_d(i,:) = xi';
-end
+delta_t = mean(diff(t));
 
 %% Proximity graph
-G = zeros(n);
+G = ones(n).*Inf;
 for i = 1:n
     for j = i+1:n
-        G(i,j) = norm(X_d(i,:)-X_d(j,:));
-        G(j,i) = G(i,j);
-    end
-    
-    [~,ind] = sort(G(i,:));
-    G(i,ind(K+2:end)) = Inf;
-end
-
-for i = 1:n
-    for j = i+1:n
-        G(i,j) = max([G(i,j),G(j,i)]);
-        G(j,i) = G(i,j);
-    end
-end
+        if G_adj(i,j) == 1
+            G(i,j) = sqrt(sum((X(i,:)-X(j,:)).^2.*delta_t));
+            G(j,i) = G(i,j);
+        end
+    end 
+end 
 
 % Shortest path graph and corresponding paths
 G_s = zeros(n);
@@ -106,12 +78,14 @@ for i = 1:n
 end
  
 %% Tangent spaces and parallel transport    
-TM = cell(1,n); % Tangent spaces
+TM = cell(1,n);% Tangent spaces
 for i = 1:n
     [~,ind] = sort(G_s(i,:));
-    mu_i = mean(X_d(ind(2:K_pca+1),:),1);
-    X_i_cen = X_d(ind(2:K_pca+1),:)-mu_i;  
-    [~,~,phi_i] = svds(X_i_cen,d);
+    mu_i = mean(X(ind(2:K_pca+1),:),1);
+    X_i_cen = X(ind(2:K_pca+1),:)-mu_i;  
+    [~,~,phi_i] = svds(X_i_cen,d);     
+    norm_phi_i = sqrt(sum(phi_i.^2.*delta_t,1));      
+    phi_i = phi_i ./ norm_phi_i; 
     TM{1,i} = phi_i';
 end
 
@@ -120,7 +94,7 @@ R = cell(n);
 for i = 1:n
     for j = 1:n
         if j ~= i
-            Phi_ij = TM{1,i} * TM{1,j}';
+            Phi_ij = TM{1,i} * TM{1,j}' * mean(diff(t));
             [U,~,V] = svd(Phi_ij); 
             R{j,i} = V * U';
         end
@@ -133,12 +107,13 @@ for i = 1:n
     D(i,i) = 0;
     for j = 1:n
         if length(Path{i,j}) > 1
-            v_i = zeros(d,length(Path{i,j})-1); 
-            for k = 1:size(v_i,2)     
-                xi_i = TM{1,Path{i,j}(k+1)} * (X_d(Path{i,j}(k),:) - X_d(Path{i,j}(k+1),:))';
+            v_i = zeros(d,length(Path{i,j})-1);
+            for k = 1:size(v_i,2)    
+                xi_i = sum((X(Path{i,j}(k),:) - X(Path{i,j}(k+1),:)).*TM{1,Path{i,j}(k+1)}.*delta_t,2);
                 if opt == 1
-                xi_i = xi_i ./ norm(xi_i) .* norm(X_d(Path{i,j}(k),:) - X_d(Path{i,j}(k+1),:));% Rescaling
-                end 
+                    xi_i = xi_i ./ norm(xi_i) .* sqrt(sum((X(Path{i,j}(k),:) - X(Path{i,j}(k+1),:)).^2.*delta_t,2));% Rescaling
+                end
+                
                 s = k+1;
                 while Path{i,j}(s) ~= j
                     xi_i = R{Path{i,j}(s+1),Path{i,j}(s)} * xi_i; %T_s M to T_s+1 M                  

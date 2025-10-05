@@ -78,10 +78,11 @@ for n_ind = 1:length(n_all)
         
         d = 2; %Intrinsic dimension known
         %d = dim( t,X,0.9 ); %Intrinsic dimension estimated
-
+        t = t';
+        X = X';
         %% Geodesic distance estimation
-        [D_FPTU_res,~] = FPTU( t,X,K,K_pca,d,1 );
-        [D_FPTU_nonres,~] = FPTU( t,X,K,K_pca,d,0 );
+        [D_FPTU_res,~] = FPTU_adj_knn( t,X,K,K_pca,d,1 );
+        [D_FPTU_nonres,~] = FPTU_adj_knn( t,X,K,K_pca,d,0 );
         D_PTU_PCA_res = PTU_PCA( t,X,K,K_pca,d,1 );
         D_PTU_PCA_nonres = PTU_PCA( t,X,K,K_pca,d,0 );
         [D_Iso,~] =  FIsomap( t,X,K ); 

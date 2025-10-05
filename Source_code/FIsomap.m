@@ -1,8 +1,8 @@
 function [ G_s,Path ] = FIsomap( t,X,K )
 % Functional isometric map.
 % Input:
-% t: p*1 time interval;
-% X: p*n data matrix, each column contains function values of an individual;
+% t: 1*p time interval;
+% X: n*p data matrix, each column contains function values of an individual;
 % K: number of nearest neighbours;
 % Output:
 % G_s: n*n proximity graph.
@@ -10,21 +10,21 @@ function [ G_s,Path ] = FIsomap( t,X,K )
 
 % Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
 
-if isrow(t)
+if iscolumn(t)
     t = t';
 end
     
-if length(t) ~= size(X,1)
+if length(t) ~= size(X,2)
     error('Dimensions of the input functional data do not match.')
 end
 
-n = size(X,2);
+n = size(X,1);
 
 %% Proximity graph
 G = zeros(n);
 for i = 1:n
     for j = i+1:n
-        G(i,j) = sqrt(trapz(t,(X(:,i)-X(:,j)).^2));
+        G(i,j) = sqrt(trapz(t,(X(i,:)-X(j,:)).^2));
         G(j,i) = G(i,j);
     end
     

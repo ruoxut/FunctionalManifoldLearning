@@ -1,8 +1,8 @@
 function [ X_d,G,n_com ] = graph_clustering( t,X,D,g,d,n_start )
 % Graph-based clustering using the proximity graph D.
 % Input:
-% t: p*1 time interval;
-% X: p*n data matrix, each column contains function values of an individual;
+% t: 1*p time interval;
+% X: n*p data matrix, each column contains function values of an individual;
 % D: n*n proximity graph;
 % g: number of clusters;
 % d: intrinsic dimension;
@@ -62,12 +62,12 @@ if n_com > g
         for i = 1:length(n_G)
             for j = i+1:length(n_G)
                 D_ave(i,j) = 0;
-                X_i = X(:,G==ind_i(i,j));
-                X_j = X(:,G==ind_j(i,j));
-                for k = 1:size(X_i,2)
-                    D_ave(i,j) = D_ave(i,j) + sum(sqrt(trapz(t,(X_i(:,k) - X_j).^2)));
+                X_i = X(G==ind_i(i,j),:);
+                X_j = X(G==ind_j(i,j),:);
+                for k = 1:size(X_i,1)
+                    D_ave(i,j) = D_ave(i,j) + sum(sqrt(trapz(t,(X_i(k,:) - X_j).^2)));
                 end
-                D_ave(i,j) = D_ave(i,j) / (size(X_i,2)*size(X_j,2));
+                D_ave(i,j) = D_ave(i,j) / (size(X_i,1)*size(X_j,1));
             end
         end        
        [i_min,j_min] = find(D_ave == min(min(D_ave)));

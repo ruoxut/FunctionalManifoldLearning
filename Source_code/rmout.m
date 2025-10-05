@@ -1,24 +1,24 @@
 function [X,G,ind_rm] = rmout(t,X,G,K,n_min)
-% Remove components whose size is less than or equal to n_min.
+% Remove components whose sizte is less than or equal to n_min.
 % Input:
-% t: p*1 time interval;
-% X: p*n data matrix, each column contains function values of an individual;
+% t: 1*p time interval;
+% X: n*p data matrix, each column contains function values of an individual;
 % G: 1*n group labels;
 % K: number of nearest neibourghs;
 % n_min: the minimum size of components to be left.
 % Output:
-% X: p*n_left data matrix, each column contains function values of an individual;
+% X: n_left*p data matrix, each column contains function values of an individual;
 % G: 1*n_left group labels;
 % ind_rm: removed indices.
 
 % Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
 
-n = size(X,2);
+n = size(X,1);
 D = zeros(n);
 
 for i = 1:n
     for j = i+1:n
-        D(i,j) = sqrt(trapz(t,(X(:,i)-X(:,j)).^2));
+        D(i,j) = sqrt(trapz(t,(X(i,:)-X(j,:)).^2));
         D(j,i) = D(i,j);
     end
     
@@ -61,7 +61,7 @@ for k = 1:length(n_G_rm)
     ind_rm = [ind_rm find(G_com==n_G_rm(k))];
 end
 
-X(:,ind_rm) = [];
+X(ind_rm,:) = [];
 G(ind_rm) = [];
 
 end

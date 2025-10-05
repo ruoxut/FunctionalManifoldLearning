@@ -5,8 +5,8 @@ function [ d ] = dim( t,X,delta )
 % Facco, E., d’Errico, M., Rodriguez, A. and Laio, A. (2017). Estimating the intrinsic 
 % dimension of datasets by a minimal neighborhood information. Scientific Reports, 7, 1–8.
 % Input:
-% t: p*1 time interval;
-% X: p*n data matrix, each column includes values of a curve;
+% t: 1*p time interval;
+% X: n*p data matrix, each row includes values of a curve;
 % delta: a number in (0,1), the fraction of data to be used.
 % Output:
 % d: estimated intrinsic dimension.
@@ -21,13 +21,15 @@ if delta >= 1 || delta < 0
     error('delta must be in (0,1).')
 end
 
-n = size(X,2);
-mu_X = mean(X,2);
+delta_t = mean(diff(t)); 
+n = size(X,1);
+mu_X = mean(X,1);
 X_cen = X - mu_X;
-Cov = X_cen * X_cen' / n;
+Cov = X_cen' * X_cen / n;
 [phi,~,expd] = pcacov(Cov);
-norm_phi = sqrt(trapz(t,phi.^2));       
+norm_phi = sqrt(sum(phi.^2.*delta_t,1));       
 phi = phi ./ norm_phi;
+phi = phi';
 
 n_c = 1;
 s = expd(1);
@@ -35,16 +37,16 @@ while s<95
     n_c = n_c+1;
     s = s+expd(n_c);
 end
-Xi_n_c = zeros(n_c,n); 
+Xi_n_c = zeros(n,n_c); 
 for i = 1:n
-    xi = trapz(t,X_cen(:,i).*phi(:,1:n_c));
-    Xi_n_c(:,i) = xi'; 
+    xi = sum(X_cen(i,:).*phi(1:n_c,:).*delta_t,2);
+    Xi_n_c(i,:) = xi'; 
 end
 
 G = zeros(n);
 for i = 1:n
     for j = i+1:n
-        G(i,j) = norm(Xi_n_c(:,i)-Xi_n_c(:,j));
+        G(i,j) = norm(Xi_n_c(i,:)-Xi_n_c(j,:));
         G(j,i) = G(i,j);
     end
 end

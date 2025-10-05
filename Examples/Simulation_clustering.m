@@ -125,8 +125,9 @@ for ind_1 = 1:length(n_all)
             [~,X(:,i),~]  = loclin( t_obs,X_obs(:,i),min(t_obs),max(t_obs) );
         end
        
-       
-       %% Clustering
+        t = t';
+        X = X';
+        %% Clustering
         G = zeros(1,n); % Group labels  
         G(1,1:n_1) = 1;
         G(1,n_1+1:n) = 2;
@@ -142,10 +143,10 @@ for ind_1 = 1:length(n_all)
             K = K_all(ind_2);
 
             % FPTU/FPU_PCA dimension reduction and graph clustering
-            [ D_FPTU_res{n_rep_ind,ind_2},~ ] = FPTU( t,X,K,K,d_est,1 );
+            [ D_FPTU_res{n_rep_ind,ind_2},~ ] = FPTU_adj_knn( t,X,K,K,d_est,1 );
             [ X_d_FPTU_res,G_FPTU_res{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_res{n_rep_ind,ind_2},g,d_est,n_start );
 
-            [ D_FPTU_nonres{n_rep_ind,ind_2},~ ] = FPTU( t,X,K,K,d_est,0 );
+            [ D_FPTU_nonres{n_rep_ind,ind_2},~ ] = FPTU_adj_knn( t,X,K,K,d_est,0 );
             [ X_d_FPTU_nres,G_FPTU_nonres{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_nonres{n_rep_ind,ind_2},g,d_est,n_start );
 
             [ D_PTU_PCA_res{n_rep_ind,ind_2} ] = PTU_PCA( t,X,K,K,d_est,1 );
@@ -174,12 +175,12 @@ for ind_1 = 1:length(n_all)
        % FPCA and k-means clustering
        [X_d_PCA,~,~] = FPCA(t,X);
 
-       G_PCA{1,n_rep_ind} = kmeans(X_d_PCA',g,'Replicates',n_start);
+       G_PCA{1,n_rep_ind} = kmeans(X_d_PCA,g,'Replicates',n_start);
 
        ADI_PCA(n_rep_ind,1) = rand_index(G,G_PCA{1,n_rep_ind},'adjusted');
 
        % Standard k-means clustering
-       G_st{1,n_rep_ind} = kmeans(X',g,'Replicates',n_start);
+       G_st{1,n_rep_ind} = kmeans(X,g,'Replicates',n_start);
 
        ADI_st(n_rep_ind,1) = rand_index(G,G_st{1,n_rep_ind},'adjusted');
 

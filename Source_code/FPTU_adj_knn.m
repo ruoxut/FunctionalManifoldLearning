@@ -1,8 +1,8 @@
-function [ D,Path ] = FPTU( t,X,K,K_pca,d,opt )
+function [ D,Path ] = FPTU_adj_knn( t,X,K,K_pca,d,opt )
 % Functional parallel transport unfolding.
 % Input:
-% t: p*1 time interval;
-% X: p*n data matrix, each column contains function values of an individual;
+% t: 1*p time interval;
+% X: n*p data matrix, each column contains function values of an individual;
 % K: number of nearest neighbours;
 % K_pca: number of nearest neighbours used in local PCA;
 % d: intrinsic dimension;
@@ -17,21 +17,22 @@ if K_pca < d
     error('K_pca is smaller than the intrinsic dimension.')
 end
 
-if isrow(t)
+if iscolumn(t)
     t = t';
 end
     
-if length(t) ~= size(X,1)
+if length(t) ~= size(X,2)
     error('Dimensions of the input functional data do not match.')
 end
 
-n = size(X,2);
+n = size(X,1);
+delta_t = mean(diff(t));
 
 %% Proximity graph
 G = zeros(n);
 for i = 1:n
     for j = i+1:n
-        G(i,j) = sqrt(trapz(t,(X(:,i)-X(:,j)).^2));
+        G(i,j) = sqrt(trapz(t,(X(i,:)-X(j,:)).^2));
         G(j,i) = G(i,j);
     end
     
@@ -88,13 +89,12 @@ end
 TM = cell(1,n);% Tangent spaces
 for i = 1:n
     [~,ind] = sort(G_s(i,:));
-    mu_i = mean(X(:,ind(2:K_pca+1)),2);
-    X_i_cen = X(:,ind(2:K_pca+1))-mu_i; 
-    X_i_cen = X_i_cen';
+    mu_i = mean(X(ind(2:K_pca+1),:),1);
+    X_i_cen = X(ind(2:K_pca+1),:)-mu_i;  
     [~,~,phi_i] = svds(X_i_cen,d); 
-    norm_phi_i = sqrt(trapz(t,phi_i.^2,1));       
+    norm_phi_i = sqrt(sum(phi_i.^2.*delta_t,1));          
     phi_i = phi_i ./ norm_phi_i; 
-    TM{1,i} = phi_i;
+    TM{1,i} = phi_i';
 end
 
 % Discrete parallel transport
@@ -102,7 +102,7 @@ R = cell(n);
 for i = 1:n
     for j = 1:n
         if j ~= i
-            Phi_ij = TM{1,i}' * TM{1,j} * mean(diff(t));
+            Phi_ij = TM{1,i} * TM{1,j}' * mean(diff(t));
             [U,~,V] = svd(Phi_ij); 
             R{j,i} = V * U';
         end
@@ -117,9 +117,9 @@ for i = 1:n
         if length(Path{i,j}) > 1
             v_i = zeros(d,length(Path{i,j})-1);
             for k = 1:size(v_i,2)    
-                xi_i = trapz(t,(X(:,Path{i,j}(k)) - X(:,Path{i,j}(k+1))).*TM{1,Path{i,j}(k+1)},1)';
+                xi_i = sum((X(Path{i,j}(k),:) - X(Path{i,j}(k+1),:)).*TM{1,Path{i,j}(k+1)}.*delta_t,2);
                 if opt == 1
-                xi_i = xi_i ./ norm(xi_i) .* sqrt(trapz(t,(X(:,Path{i,j}(k)) - X(:,Path{i,j}(k+1))).^2,1));% Rescaling
+                xi_i = xi_i ./ norm(xi_i) .* sqrt(sum((X(Path{i,j}(k),:) - X(Path{i,j}(k+1),:)).^2.*delta_t,2));% Rescaling
                 end
                 
                 s = k+1;
