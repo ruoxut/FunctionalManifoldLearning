@@ -1,5 +1,5 @@
 function [ D,Path ] = FPTU_adj_knn( t,X,K,K_pca,d,opt )
-% Functional parallel transport unfolding.
+% Functional parallel transport unfolding with the K-nn adjacency matrix.
 % Input:
 % t: 1*p time interval;
 % X: n*p data matrix, each column contains function values of an individual;

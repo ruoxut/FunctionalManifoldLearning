@@ -1,5 +1,5 @@
 function [ D,Path ] = FPTU_adj_input( t,X,G_adj,K_pca,d,opt )
-% Functional parallel transport unfolding.
+% Functional parallel transport unfolding with an input G_adj the adjacency matrix.
 % Input:
 % t: 1*p time interval;
 % X: n*p data matrix, each row contains function values of an individual; 
