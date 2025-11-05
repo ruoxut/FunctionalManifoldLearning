@@ -3,7 +3,7 @@
 The rep contains the code to implement the functional manifold learning approaches proposed in the following papers:
     
 1. Tan, R., Zang, Y. and Yin, G. (2024). Nonlinear dimension reduction for functional data with application to clustering. Statistica Sinica, 34, 1391-1412. 
-2. Tan R. and Zang Y. (2025+). Supervised manifold learning for functional data. Journal of Computational Graphical Statistics.
+2. Tan R. and Zang Y. (2025+). Supervised manifold learning for functional data. Journal of Computational and Graphical Statistics.
 
 Please cite the papers above if you use the code.
 
