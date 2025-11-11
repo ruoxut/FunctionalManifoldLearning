@@ -1,7 +1,7 @@
 function [X_d,phi,lambda] = FPCA(t,X,FVE)
 % Functional principal component analysis.
 % Input:
-% t: 1*p time vector;
+% t: 1*p time vector, even space is required;
 % X: n*p data matrix, each row contains function values of an
 % individual;
 % FVE: fraction in percentage of variance explained to select the number of PCs, 95 as default.
