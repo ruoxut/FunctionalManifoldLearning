@@ -57,6 +57,7 @@ Y_out = cell(1,n_fold_CV);
 X_in = cell(1,n_fold_CV);
 Y_in = cell(1,n_fold_CV);
 G_FSML_in = cell(1,n_fold_CV);
+inner_idx = cell(1,n_fold_CV);
 
 for i = 1:n_fold_CV
     X_out{i} = X((group_idx(i)+1):group_idx(i+1),:);
@@ -68,6 +69,7 @@ for i = 1:n_fold_CV
     G_FSML_in{i} = G_FSML;
     G_FSML_in{i}((group_idx(i)+1):group_idx(i+1),:) = [];
     G_FSML_in{i}(:,(group_idx(i)+1):group_idx(i+1)) = [];
+    inner_idx{i} = randperm(size(X_in{i},1));
 end
 
 parfor k = 1:length(xi_range)
@@ -82,8 +84,7 @@ parfor k = 1:length(xi_range)
                 end
             end
         end 
-        warning('off','stats:mdscale:IterOrEvalLimit');
-        Z_d_in = mdscale(G_FSML_in_i,d,"Criterion","metricstress");
+        Z_d_in = cmdscale(G_FSML_in_i,d);
 
         Z_out_pre = zeros(length(Y_out{i}),d);        
         n_in = length(Y_in{i});
@@ -91,7 +92,7 @@ parfor k = 1:length(xi_range)
         sd_ave = mean(std(Z_d_in,0,1));
         h_pilot = sd_ave / (n_in^(1/(d+4))); 
         h_reg_range = linspace(h_pilot/5,h_pilot*5,20); 
-        [h_reg_CV_row(i),~] = CV_FLLE(t,X_in{i},Z_d_in,K_pca,h_reg_range,n_fold_CV);
+        [h_reg_CV_row(i),~] = CV_FLLE(t,X_in{i},Z_d_in,K_pca,h_reg_range,n_fold_CV,inner_idx{i});
 
         for j = 1:length(Y_out{i})
             Z_out_pre(j,:) = FLLE(t,X_in{i},Z_d_in,X_out{i}(j,:),K_pca,h_reg_CV_row(i));
@@ -122,7 +123,7 @@ xi_CV = xi_range(ind_opt);
 end
  
 
-function [h_reg_CV,Loss] = CV_FLLE(t,X,Z,K_pca,h_reg_range,n_CV)
+function [h_reg_CV,Loss] = CV_FLLE(t,X,Z,K_pca,h_reg_range,n_CV,idx)
 % Cross-validation selection for the bandwidth h_reg in local linear regression on tangent space.
 % Input:
 % t: 1*p time interval;
@@ -145,7 +146,9 @@ end
 
 n = size(X,1);
 
-idx = randperm(n);
+if nargin < 7
+    idx = randperm(n);
+end
 X = X(idx,:);
 Z = Z(idx,:);
 
@@ -168,7 +171,7 @@ end
 
 parfor k = 1:length(h_reg_range)
     for i = 1:n_CV 
-        for j = 1:size(X_out,1)
+        for j = 1:size(X_out{i},1)
             Z_out_pre_j = FLLE(t,X_in{i},Z_in{i},X_out{i}(j,:),K_pca,h_reg_range(k));
             Loss(k) = Loss(k) + norm(Z_out{i}(j,:)-Z_out_pre_j,"fro")^2;
         end

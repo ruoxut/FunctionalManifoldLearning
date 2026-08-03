@@ -10,7 +10,6 @@ function [mu] = FLLE(t,X,Z,x,K_pca,h)
 % Output:
 % mu: 1*d estimated conditional mean at x.
 
-% Author: Ruoxu Tan; date: 2025/May; Matlab version: R2024b.
 if length(t) ~= size(X,2) || size(X,1)~=size(Z,1)
     error('Dimensions of the input data do not match.')
 end
@@ -32,7 +31,8 @@ G_x = sqrt(sum((X-x).^2.*delta_t,2));
 [~,ind] = sort(G_x);
 mu_x = mean(X(ind(1:K_pca),:),1);
 X_x_cen = X(ind(1:K_pca),:)-mu_x; 
-[~,~,phi_x] = svds(X_x_cen,d);   
+[~,~,phi_x] = svd(X_x_cen,'econ');
+phi_x = phi_x(:,1:d);
 norm_phi_x = sqrt(sum(phi_x.^2.*delta_t,1));       
 phi_x = phi_x ./ norm_phi_x; 
 TM_x = phi_x'; % d*p matrix, each row contains a basis function
@@ -43,16 +43,18 @@ for i = 1:n
     X_mat(i,2:end) = sum((X(i,:)-x).*TM_x.*delta_t,2)';
 end
 
-W = diag(normpdf(G_x./h)./(h^d));
+w = normpdf(G_x./h)./(h^d);
+XW = X_mat' .* w';
+XWX = XW * X_mat;
 e_1 = zeros(1,d+1);
 e_1(1) = 1;
 
-if cond(X_mat' * W * X_mat) > 1e3
-    mu = e_1 / (X_mat' * W * X_mat + eye(d+1).*n^(-3));
+if cond(XWX) > 1e3
+    mu = e_1 / (XWX + eye(d+1).*n^(-2));
 else
-    mu = e_1 / (X_mat' * W * X_mat);
+    mu = e_1 / XWX;
 end
 
-mu = mu * X_mat' * W * Z; 
+mu = mu * XW * Z; 
 
 end
