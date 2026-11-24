@@ -17,25 +17,26 @@ if nargin < 3
     delta = 0.9;
 end
 
-if delta >= 1 || delta < 0
-    error('delta must be in (0,1).')
-end
-
-delta_t = mean(diff(t)); 
+[~,delta_t] = fml_validate_grid(t,X);
+validateattributes(delta,{'numeric'},{'real','finite','scalar','>',0,'<',1},mfilename,'delta');
 n = size(X,1);
+if n < 3
+    error('FML:InsufficientSample','Dimension estimation requires at least three curves.');
+end
 mu_X = mean(X,1);
 X_cen = X - mu_X;
 Cov = X_cen' * X_cen / n;
 [phi,~,expd] = pcacov(Cov);
+if any(~isfinite(expd)) || sum(expd) <= 0
+    error('FML:ZeroVariance','Dimension estimation requires positive variation among curves.');
+end
 norm_phi = sqrt(sum(phi.^2.*delta_t,1));       
 phi = phi ./ norm_phi;
 phi = phi';
 
-n_c = 1;
-s = expd(1);
-while s<95
-    n_c = n_c+1;
-    s = s+expd(n_c);
+n_c = find(cumsum(expd) >= 95,1);
+if isempty(n_c)
+    error('FML:InvalidPCA','Could not determine the FPCA variance threshold.');
 end
 Xi_n_c = zeros(n,n_c); 
 for i = 1:n
@@ -53,12 +54,18 @@ end
 
 mu = zeros(1,n);
 for i = 1:n
-    d_i = sort(G(i,:));
-    mu(i) = d_i(3)/d_i(2);
+    d_i = sort(G(i,[1:i-1,i+1:n]));
+    if d_i(1) <= 0
+        error('FML:DuplicateScores','Dimension estimation is undefined for duplicate FPCA scores.');
+    end
+    mu(i) = d_i(2)/d_i(1);
 end
 n_sub = round(delta*n);
 if n_sub == n
     n_sub = n-1;
+end
+if n_sub < 1
+    error('FML:InsufficientSample','delta retains no observations for dimension estimation.');
 end
 
 mu = sort(mu);
@@ -66,6 +73,13 @@ mu = mu(1:n_sub);
 
 X_data = log(mu);
 Y_data = -log(1-(1:n_sub)./n); 
-d = round(sum(X_data.*Y_data) / sum(X_data.^2));
+denominator = sum(X_data.^2);
+if ~isfinite(denominator) || denominator <= 0
+    error('FML:DegenerateDimension','Nearest-neighbor distance ratios do not identify a finite dimension.');
+end
+d = round(sum(X_data.*Y_data)/denominator);
+if ~isfinite(d) || d < 1 || d > min(n-1,size(X,2))
+    error('FML:InvalidDimension','The estimated dimension is not supported by the sample and evaluation grid.');
+end
 
 end

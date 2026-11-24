@@ -34,6 +34,13 @@ function   [optid,purclus,adrclus,tnclus] =  Scaled_Kmeans(dataset,K,nstart,True
 
 %% Start program.
 
+if ~isnumeric(dataset) || ~isreal(dataset) || ~ismatrix(dataset) || ...
+        any(~isfinite(dataset(:))) || size(dataset,1) ~= numel(Trueid)
+    error('FML:InvalidDHPData','DHP expects one finite data row per true label.');
+end
+Trueid = Trueid(:);
+validateattributes(q,{'numeric'},{'real','finite','scalar','integer','>=',2});
+validateattributes(p,{'numeric'},{'real','finite','scalar','integer','positive','<=',q});
 sizedat = size(dataset) ;
 
 T = sizedat(2);

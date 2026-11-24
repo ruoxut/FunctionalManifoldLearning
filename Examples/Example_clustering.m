@@ -7,6 +7,8 @@
 % Author: Ruoxu Tan; date: 2025/Oct/5; Matlab version: R2024b.
 
 %% Pre-set values
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')),'..','Source_code')));
+
 n = 200; % Sample size
 K = 10; % K-nearest neighbours
 p = 200; % Number of dense time points
@@ -44,7 +46,7 @@ end
        
 % Presmoothing using the ridged local linear estimator.
 parfor i = 1:n
-    [~,X(i,:),~]  = loclin( t_obs,X_obs(i,:),min(t_obs),max(t_obs) );
+    [~,X(i,:),~]  = loclin( t_obs,X_obs(i,:),min(t_obs),max(t_obs),'clustering' );
 end
        
        

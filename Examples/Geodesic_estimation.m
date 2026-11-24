@@ -6,6 +6,8 @@
 
 % Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')),'..','Source_code')));
+
 n_all = [100 200 500];% Sample sizes
 K_all = [10 13 18];% K-nearest neighbours
 n_rep = 100;% Number of simulation repetition
@@ -37,7 +39,7 @@ for n_ind = 1:length(n_all)
             for j = 1:n
                 if j ~= i
                     C = norm(A(i,:) - A(j,:));
-                    D_true(i,j) = 2*asin(C/2);
+                    D_true(i,j) = 2*asin(min(1,C/2));
                 end
             end
         end
@@ -64,7 +66,7 @@ for n_ind = 1:length(n_all)
             
             % Presmoothing
             parfor i = 1:n
-                [~,X(:,i),~]  = loclin( t_obs,X_obs(:,i),min(t_obs),max(t_obs) );
+                [~,X(:,i),~]  = loclin( t_obs,X_obs(:,i),min(t_obs),max(t_obs),'clustering' );
             end
             
         else
@@ -76,10 +78,9 @@ for n_ind = 1:length(n_all)
             
         end
         
-        d = 2; %Intrinsic dimension known
-        %d = dim( t,X,0.9 ); %Intrinsic dimension estimated
-        t = t';
         X = X';
+        d = 2; %Intrinsic dimension known
+        %d = dim( t,X,0.9 ); %Intrinsic dimension estimated; rows are subjects.
         %% Geodesic distance estimation
         [D_FPTU_res,~] = FPTU_adj_knn( t,X,K,K_pca,d,1 );
         [D_FPTU_nonres,~] = FPTU_adj_knn( t,X,K,K_pca,d,0 );

@@ -6,6 +6,8 @@
 
 % Matlab version: R2024b; last updated: 2025/May.
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')),'..','Source_code')));
+
 n_sample = [200 500]; % Training sample sizes
 n_test = 500; % Test sample size
 n_rep = 200; % Number of simulation repetitions
@@ -34,6 +36,8 @@ for n_sample_ind = 1:length(n_sample)
     
     parfor n_rep_ind = 1:n_rep
         rng(3*n_rep_ind)
+        X_train_obs = zeros(n,t_obs_num);
+        X_test_obs = zeros(n_test,t_obs_num);
 
         if model_ind == 1 % Model (i)--------------------------------------
             Y_train{n_rep_ind} = random('Binomial',1,0.5,[n,1]);
@@ -57,7 +61,7 @@ for n_sample_ind = 1:length(n_sample)
                 if Z_1(i) == 0
                     gamma = t_obs;
                 else
-                    gamma = (exp(Z_1(i).*t_obs)-1)./(exp(Z_1(i))-1);
+                    gamma = expm1(Z_1(i).*t_obs)./expm1(Z_1(i));
                 end
                 X_train_obs(i,:) = Z_2(i).*interp1(t,mu,gamma);
             end
@@ -66,7 +70,7 @@ for n_sample_ind = 1:length(n_sample)
                 if Z_1_test(i) == 0
                     gamma = t_obs;
                 else
-                    gamma = (exp(Z_1_test(i).*t_obs)-1)./(exp(Z_1_test(i))-1);
+                    gamma = expm1(Z_1_test(i).*t_obs)./expm1(Z_1_test(i));
                 end
                 X_test_obs(i,:) = Z_2_test(i).*interp1(t,mu,gamma);
             end
@@ -168,7 +172,7 @@ for n_sample_ind = 1:length(n_sample)
                     X_train_obs(i,:) = random('Normal',0,1,[1,d]).*sigma*phi;
                 else
                     sigma = exp(-(1:d)./4);
-                    X_train_obs(i,:) = t_obs + random('Normal',0,1,[1,d]).*sigma*phi;
+                    X_train_obs(i,:) = 1 + random('Normal',0,1,[1,d]).*sigma*phi;
                 end
             end
 
@@ -178,7 +182,7 @@ for n_sample_ind = 1:length(n_sample)
                     X_test_obs(i,:) = random('Normal',0,1,[1,d]).*sigma*phi;
                 else
                     sigma = exp(-(1:d)./4);
-                    X_test_obs(i,:) = t_obs + random('Normal',0,1,[1,d]).*sigma*phi;
+                    X_test_obs(i,:) = 1 + random('Normal',0,1,[1,d]).*sigma*phi;
                 end
             end
         %------------------------------------------------------------------
@@ -187,9 +191,8 @@ for n_sample_ind = 1:length(n_sample)
         end
 
         % Adding noise and smoothing.
-        mu_X = mean(X_test_obs,1);
-        Cov_X = (X_test_obs-mu_X)'*(X_test_obs-mu_X)/n;
-        Var_X = mean(diag(Cov_X));
+        % Retain the test-sample signal reference, normalized by n_test.
+        Var_X = mean(var(X_test_obs,1,1));
         sigma = sqrt(Var_X/R);
         epsilon = random('Normal',0,sigma,[n+n_test,t_obs_num]);
 
@@ -212,19 +215,25 @@ for n_sample_ind = 1:length(n_sample)
         opt_FPTU = 0;
         if model_ind == 5
             d = dim(t,X_train{n_rep_ind},0.8);
-            if d > K_pca
+            if d >= K_pca
                 K_pca = d+1;
             end
         end
 
+        % The test-query tangent geometry is shared by all FSML classifiers.
+        test_geometry = cell(n_test,1);
+        for j = 1:n_test
+            test_geometry{j} = FLLE_prepare(t,X_train{n_rep_ind},X_test{n_rep_ind}(j,:),K_pca,d);
+        end
+
         % FSML+kNN
         method = 'k_NN'; para_method = 20;
-        [xi_CV,h_reg_CV,~] = CV_xih(t,X_train{n_rep_ind},Y_train{n_rep_ind},'delta',delta,...
+        [xi_CV,h_reg_CV,~,D_geo] = CV_xih(t,X_train{n_rep_ind},Y_train{n_rep_ind},'delta',delta,...
             'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'method',method,'para_method',para_method);
-        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU);
+        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'Geodesic',D_geo);
         Z_test = zeros(n_test,d);
         for j = 1:n_test
-            Z_test(j,:) = FLLE(t,X_train{n_rep_ind},Z_train_est,X_test{n_rep_ind}(j,:),K_pca,h_reg_CV);
+            Z_test(j,:) = FLLE_predict(test_geometry{j},Z_train_est,h_reg_CV);
         end
         Clsfy = fitcknn(Z_train_est,Y_train{n_rep_ind},'NumNeighbors',para_method);
         Y_test_est_k_NN = predict(Clsfy,Z_test);
@@ -233,11 +242,11 @@ for n_sample_ind = 1:length(n_sample)
         % FSML+SVM
         method = 'SVM'; 
         [xi_CV,h_reg_CV,~] = CV_xih(t,X_train{n_rep_ind},Y_train{n_rep_ind},'delta',delta,...
-            'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'method',method);
-        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU);
+            'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'method',method,'Geodesic',D_geo);
+        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'Geodesic',D_geo);
         Z_test = zeros(n_test,d);
         for j = 1:n_test
-            Z_test(j,:) = FLLE(t,X_train{n_rep_ind},Z_train_est,X_test{n_rep_ind}(j,:),K_pca,h_reg_CV);
+            Z_test(j,:) = FLLE_predict(test_geometry{j},Z_train_est,h_reg_CV);
         end
         Clsfy = fitcecoc(Z_train_est,Y_train{n_rep_ind});
         Y_test_est_SVM = predict(Clsfy,Z_test);
@@ -246,35 +255,26 @@ for n_sample_ind = 1:length(n_sample)
         % FSML+LDA
         method = 'LDA';
         [xi_CV,h_reg_CV,~] = CV_xih(t,X_train{n_rep_ind},Y_train{n_rep_ind},'delta',delta,...
-            'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'method',method);
-        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU);
+            'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'method',method,'Geodesic',D_geo);
+        [Z_train_est,~] = FSML(t,X_train{n_rep_ind},Y_train{n_rep_ind},xi_CV,'delta',delta,'K_pca',K_pca,'d',d,'opt_FPTU',opt_FPTU,'Geodesic',D_geo);
         Z_test = zeros(n_test,d);
         for j = 1:n_test
-            Z_test(j,:) = FLLE(t,X_train{n_rep_ind},Z_train_est,X_test{n_rep_ind}(j,:),K_pca,h_reg_CV);
+            Z_test(j,:) = FLLE_predict(test_geometry{j},Z_train_est,h_reg_CV);
         end
         Clsfy = fitcecoc(Z_train_est,Y_train{n_rep_ind},'Learners','discriminant');
         Y_test_est_LDA = predict(Clsfy,Z_test);
         Err_LDA(n_rep_ind) = sum(Y_test_est_LDA~=Y_test{n_rep_ind})/n_test;
         
         % Centroid Classifier by Delaigle and Hall (2012)
-        Y_test_est_CC = zeros(n_test,1);
-        for j = 1:n_test
-            Y_test_est_CC(j) = CC(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind}(j,:));
-        end
+        Y_test_est_CC = CC(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind});
         Err_CC(n_rep_ind) = sum(Y_test_est_CC~=Y_test{n_rep_ind})/n_test;
         
         % Functional quadratic discriminant analysis by Delaigle and Hall (2013)
-        Y_test_est_FQDA = zeros(n_test,1);
-        for j = 1:n_test
-            Y_test_est_FQDA(j) = FQDA(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind}(j,:));
-        end
+        Y_test_est_FQDA = FQDA(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind});
         Err_FQDA(n_rep_ind) = sum(Y_test_est_FQDA~=Y_test{n_rep_ind})/n_test;
 
         % Nonparametric Bayesian Classifier by Dai et al. (2017)
-        Y_test_est_NB = zeros(n_test,1);
-        for j = 1:n_test
-            Y_test_est_NB(j) = NB(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind}(j,:));
-        end
+        Y_test_est_NB = NB(t,X_train{n_rep_ind},Y_train{n_rep_ind},X_test{n_rep_ind});
         Err_NB(n_rep_ind) = sum(Y_test_est_NB~=Y_test{n_rep_ind})/n_test;       
     end
     delete(gcp("nocreate"));

@@ -31,6 +31,14 @@ function [clusid,nopf,puty,adri] = Proj_Kmeans(dataset,nstart,Trueid,q,rho,tob)
 
 % K : number of clusters. We always apply binary clustering in our case (we use hierarchical clustering when K>2)
 K=2;
+if ~isnumeric(dataset) || ~isreal(dataset) || ~ismatrix(dataset) || ...
+        any(~isfinite(dataset(:))) || size(dataset,1) ~= numel(Trueid)
+    error('FML:InvalidDHPData','DHP expects one finite data row per true label.');
+end
+Trueid = Trueid(:);
+validateattributes(q,{'numeric'},{'real','finite','scalar','integer','>=',2});
+validateattributes(nstart,{'numeric'},{'real','finite','scalar','integer','positive'});
+validateattributes(rho,{'numeric'},{'real','finite','scalar','nonnegative'});
 
 %Apply the algorithm for p=1 and p=2
 [optid1,purclus1,adrclus1,tnclus1] = Scaled_Kmeans(dataset,K,nstart,Trueid,1,q,tob);
@@ -70,6 +78,13 @@ while(finished == 0)
             finished = 1;
     end
     
+    % A projection cannot use more functions than the q available basis
+    % functions. If the stopping rule still prefers improvement, keep q.
+    if finished == 0 && nopf+1 >= min(q,10)
+        nopf = min(q,10);
+        finished = 1;
+    end
+
     %otherwise, keep increasing p until criterion satisfied
     if (finished == 0) 
 

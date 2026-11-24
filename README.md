@@ -32,3 +32,5 @@ Suppose you have the data objects `t,X` and `Y`, where `t` is an 1\*p vector rep
 4. A multivariate classifier can be trained using `Z_d` and `Y`, which induces a functional classifier that predicting the label of `x` by plugging `Z_x`.
 
 User-specified parameters such as `delta`, `d`, `method`, etc, can be specified as inputs in `CV_xih` and `FSML`; see the original files for more details. See `Example_classification.m` for a concrete example.
+
+UPDATE (2026-Nov-24): ChatGPT Sol 6.1 has been used to add numerical safeguards and speed up experiments.

@@ -1,48 +1,23 @@
-function [Y_est] = CC(t,X,Y,X_new)
-% The centroid classifier proposed by Delaigle and Hall (2012).
-% Input:
-% t: 1*p time interval;
-% X: n*p data matrix, each row contains function values of an individual;
-% Y: n*1 classes;
-% X_new: 1*p new functional observation to be classified;
-% Output:
-% Y_est: estimated class of X_new.
-
-Cls = unique(Y);
-
-Cls_pair = [Cls(1) Cls(2)];
-idx = Y==Cls_pair(1) | Y==Cls_pair(2);
-[phi,~] = CV_CC(t,X(idx,:),Y(idx));
-X_0_mean = mean(X(Y==Cls_pair(1),:),1);
-X_1_mean = mean(X(Y==Cls_pair(2),:),1);
-
-delta_t = mean(diff(t));
-T = (sum(X_new.*phi.*delta_t)-sum(X_1_mean.*phi.*delta_t))^2 -...
-    (sum(X_new.*phi.*delta_t)-sum(X_0_mean.*phi.*delta_t))^2 ;
-if T > 0
-    Y_est = Cls_pair(1);
-else
-    Y_est = Cls_pair(2);
-end
-
-k = 3;
-% Pair-wise classification for classes more than 2, more advanced
-% techniques like ECOC can be applied if needed.
-while Cls_pair(2) ~= Cls(end)
-    Cls_pair = [Cls(Cls==Y_est) Cls(k)];
-    idx = Y==Cls_pair(1) | Y==Cls_pair(2);
-    [phi,~] = CV_CC(t,X(idx,:),Y(idx));
-    X_0_mean = mean(X(Y==Cls_pair(1),:),1);
-    X_1_mean = mean(X(Y==Cls_pair(2),:),1);
-
-    T = (sum(X_new.*phi.*delta_t)-sum(X_1_mean.*phi.*delta_t))^2 -...
-        (sum(X_new.*phi.*delta_t)-sum(X_0_mean.*phi.*delta_t))^2 ;
-    if T > 0
-        Y_est = Cls_pair(1);
-    else
-        Y_est = Cls_pair(2);
+function Y_est = CC(t,X,Y,X_new)
+% Centroid classifier of Delaigle and Hall (2012).
+% X_new may contain one or many rows. Each required pairwise classifier is
+% fitted/tuned once per call; the original ordered tournament is retained.
+[t,delta_t,Y,Cls] = fml_validate_classifier_inputs(t,X,Y,X_new);
+n_new = size(X_new,1);
+winner = ones(n_new,1);
+for k = 2:numel(Cls)
+    previous = unique(winner)';
+    for j = previous
+        use = winner == j;
+        pair = Y == Cls(j) | Y == Cls(k);
+        phi = CV_CC(t,X(pair,:),Y(pair));
+        m0 = mean(X(Y == Cls(j),:),1)*phi'*delta_t;
+        m1 = mean(X(Y == Cls(k),:),1)*phi'*delta_t;
+        score = X_new(use,:)*phi'*delta_t;
+        choose_next = (score-m1).^2 - (score-m0).^2 <= 0;
+        rows = find(use);
+        winner(rows(choose_next)) = k;
     end
-    k = k+1;
 end
-
+Y_est = Cls(winner);
 end

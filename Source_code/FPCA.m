@@ -1,54 +1,33 @@
 function [X_d,phi,lambda] = FPCA(t,X,FVE)
-% Functional principal component analysis.
-% Input:
-% t: 1*p time vector, even space is required;
-% X: n*p data matrix, each row contains function values of an
-% individual;
-% FVE: fraction in percentage of variance explained to select the number of PCs, 95 as default.
-% Output:
-% X_d: n*d PC scores;
-% phi: d*p PC basis functions;
-% lambda: the eigenvalues.
-
-% Author: Ruoxu Tan; date: 2024/Apr/30; Matlab version: R2023b.
-
+% Functional PCA on an equally spaced grid (95 percent FVE by default).
+% X has subjects in rows. phi contains the retained L2-normalized basis
+% functions; lambda contains all numerically positive covariance eigenvalues.
 if nargin < 3
     FVE = 95;
 end
-
-if iscolumn(t)
-    t = t';
-end
-    
-if length(t) ~= size(X,2)
-    error('Dimensions of the input functional data do not match.')
-end
-
-delta_t = mean(diff(t)); 
+[~,delta_t] = fml_validate_grid(t,X);
+validateattributes(FVE,{'numeric'},{'real','finite','scalar','>',0,'<=',100});
 n = size(X,1);
-mu = mean(X,1);
-X_cen = X - mu;
-Cov = X_cen' * X_cen / n;
-[phi,lambda,expd] = pcacov(Cov);
-norm_phi = sqrt(sum(phi.^2.*delta_t,1));       
-phi = phi ./ norm_phi;
-phi = phi';
-lambda = norm_phi'.^2 .* lambda; 
-
-d = 1;
-s = expd(1);
-while s<FVE
-    d = d+1;
-    s = s+expd(d);
+if n < 2
+    error('FML:InsufficientSamples','FPCA requires at least two observations.');
 end
-
-X_d = zeros(n,d);
-for i = 1:n
-    xi = sum(X_cen(i,:).*phi(1:d,:).*delta_t,2);
-    X_d(i,:) = xi';
+X_cen = double(X) - mean(double(X),1);
+% Economy SVD is the same PCA with divisor n, without forming a covariance.
+[~,S,V] = svd(X_cen,'econ');
+s = diag(S);
+tol = max(size(X_cen))*eps(max(s));
+keep = s > tol;
+if ~any(keep)
+    error('FML:ZeroVariance','FPCA is undefined for zero-variance data.');
 end
-
-phi = phi(1:d,:);
-
+s = s(keep);
+V = V(:,keep);
+lambda = (s.^2/n)*delta_t;
+d = find(cumsum(lambda)/sum(lambda) >= FVE/100,1,'first');
+if isempty(d)
+    d = numel(lambda); % FVE=100 can have final-bit summation error.
+end
+phi = V(:,1:d)'/sqrt(delta_t);
+X_d = (X_cen*phi')*delta_t;
 end
 

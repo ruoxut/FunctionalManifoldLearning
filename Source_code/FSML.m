@@ -10,6 +10,7 @@ function [Z_d,G_FSML] = FSML(t,X,Y,xi,varargin)
 % K_pca: number of nearest neighbours used in local PCA;
 % d: intrinsic dimension;
 % opt_FPTU: the option for FPTU, =1 means rescale; otherwise not rescale;
+% Geodesic: optional precomputed n-by-n geodesic matrix in the input row order;
 % Output:
 % Z_d: n*d low-dimensional outcomes;
 % G_FSML: n*n proximity matrix.
@@ -20,35 +21,29 @@ addParameter(p,'delta',0.6);
 addParameter(p,'K_pca',15);
 addParameter(p,'opt_FPTU',0);
 addParameter(p,'d',2);
+addParameter(p,'Geodesic',[]);
 parse(p,varargin{:})
 
 delta = p.Results.delta;
 K_pca = p.Results.K_pca;
 d = p.Results.d;
 opt_FPTU = p.Results.opt_FPTU;
-
-if iscolumn(t)
-    t = t';
-end
-
+[t,Y] = fml_validate_supervised(t,X,Y,K_pca,d);
+validateattributes(xi,{'numeric'},{'real','finite','scalar','nonnegative'});
 n = size(X,1);
-
-G_adj = Adj_Graph(t,X,delta);
-
-[ D,~ ] = FPTU_adj_input( t,X,G_adj,K_pca,d,opt_FPTU ); 
-
-G_FSML = D;
-
-for i = 1:n
-    for j = i+1:n
-        if Y(i) ~= Y(j)
-            G_FSML(i,j) = G_FSML(i,j) + xi./(G_FSML(i,j)+sqrt(xi));
-            G_FSML(j,i) = G_FSML(i,j);
-        end
-    end
+D = p.Results.Geodesic;
+if isempty(D)
+    G_adj = Adj_Graph(t,X,delta);
+    D = FPTU_adj_input(t,X,G_adj,K_pca,d,opt_FPTU);
 end
-warning('off','stats:mdscale:IterOrEvalLimit');
-Z_d = mdscale(G_FSML,d,"Criterion","metricstress");
+D = fml_validate_distances(D,n);
+G_FSML = D;
+if xi > 0
+    different_class = Y ~= Y';
+    G_FSML(different_class) = D(different_class) ...
+        + xi./(D(different_class)+sqrt(xi));
+end
+Z_d = fml_mds(G_FSML,d);
     
 end
 

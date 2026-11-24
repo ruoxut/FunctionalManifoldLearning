@@ -1,218 +1,191 @@
-function [ t,f1,f2 ] = loclin( X,Y,a,b )
-% The function performs the 1-d covariate ridged local linear estimator for E(Y|X) and
-% the local quadratic ridged estimator for E'(Y|X).  
-% Input:
-% X: n*1 covariate vector;
-% Y: n*1 outcome vector;
-% [a,b]: the interval for which we estimate E(Y|X), [q_0.025 and q_0.975] as default.
-% Output:
-% t: the vector where we evaluate the estimator;
-% f1: the vector of estimated E(Y|X=x);
-% f2: the vector of estimated E'(Y|X=x).
-
+function [t,f1,f2] = loclin(X,Y,a,b,moment_convention)
+% Ridged local-linear curve and local-quadratic first derivative.
+% The original CV/plug-in bandwidth stages are retained; polynomial fits use
+% centered/scaled QR rather than expanded determinant formulas.
+% Optional moment_convention:
+%   'classification' (default): Sk=mean(K(u).*u.^k), JCGS Eq. (3.2).
+%   'clustering': Sk=mean(K(u).*u.^k)/h, Sinica Eq. (2.2).
+% Both use lambda=J^(-2), with J=numel(X). The derivative's determinant ridge
+% retains the original raw sum K_h(dx)*dx^k convention (not specified by those
+% displayed curve-estimation formulas). At exact singularity we diagnose the
+% unsupported fit rather than silently returning an arbitrary estimate.
 if nargin < 3
     a = quantile(X,0.025);
     b = quantile(X,0.975);
 end
-
-if isrow(X)
-    X = X';
+if nargin < 5
+    moment_convention = 'classification';
 end
-
-if isrow(Y)
-    Y = Y';
+moment_convention = validatestring(moment_convention,{'classification','clustering'});
+if ~isnumeric(X) || ~isnumeric(Y) || ~isreal(X) || ~isreal(Y) || ...
+        ~isvector(X) || ~isvector(Y) || numel(X) ~= numel(Y) || ...
+        any(~isfinite(X(:))) || any(~isfinite(Y(:)))
+    error('FML:InvalidData','Smoothing requires equally long finite real X and Y vectors.');
 end
-
-if length(unique(X)) < 4
-    error('Too few data points.')
+X = double(X(:));
+Y = double(Y(:));
+validateattributes(a,{'numeric'},{'real','finite','scalar'});
+validateattributes(b,{'numeric'},{'real','finite','scalar','>',a});
+n = numel(X);
+n_unique = numel(unique(X));
+if n_unique < 5
+    error('FML:InsufficientSamples','The quartic bandwidth pilot requires five distinct covariates.');
 end
-
-t = linspace(a,b,200)'; %Where to evaluate regression
-
-f1 = zeros(length(t),1);
-f2 = zeros(length(t),1);
-
-%Bandwidth selection
-opt = optimset('Display','off','MaxIter',20);
-Wei = X>=a & X<=b;%Weighting function
-      
-ht0 = @(h) CVloss(X,Y,h,a,b);
-hCV = fminbnd(ht0,(b-a).*length(unique(X))^(-0.5),(b-a)./2,opt);
-fpilot = zeros(length(X),1);
-WV = zeros(length(X),length(X));
-
-for i = 1:length(X)
-    if X(i) >= a && X(i) <=b
-    a0 = normpdf((X-X(i))./hCV)./hCV;
-    a1 = (X-X(i)).*a0;
-    a2 = (X-X(i)).*a1;
-    
-    S0 = sum(a0);
-    S1 = sum(a1);
-    S2 = sum(a2);
-    T0 = sum(a0.*Y);
-    T1 = sum(a1.*Y);    
-        
-    fpilot(i) = (T0*S2-T1*S1)/(S0*S2-S1^2);    
-    WV(i,:) = (a0'.*S2-a1'.*S1)./(S0*S2-S1^2);    
-    end
+t = linspace(a,b,200)';
+f1 = zeros(size(t));
+f2 = zeros(size(t));
+if all(Y == Y(1))
+    f1(:) = Y(1);
+    return
 end
-
-nu = length(X) - 2.*trace(WV)+sum(sum(WV.^2));   
-Var = sum((Y-fpilot).^2.*Wei)./nu;
-       
-%\hat{m}_qua
-a_0 = ones(length(X),1);
-a_1 = X.*a_0;
-a_2 = X.*a_1;
-a_3 = X.*a_2;
-a_4 = X.*a_3;
-a_5 = X.*a_4;
-a_6 = X.*a_5;
-a_7 = X.*a_6;
-a_8 = X.*a_7;
-b_0 = Y.*a_0;
-b_1 = X.*b_0;
-b_2 = X.*b_1;
-b_3 = X.*b_2;
-b_4 = X.*b_3;
-
-S0 = sum(a_0); S1 = sum(a_1); S2 = sum(a_2); S3 = sum(a_3); S4 = sum(a_4);
-S5 = sum(a_5); S6 = sum(a_6); S7 = sum(a_7); S8 = sum(a_8);
-T0 = sum(b_0); T1 = sum(b_1); T2 = sum(b_2); T3 = sum(b_3); T4 = sum(b_4);
-
-den_pol = (- S8*S1^2*S4*S6 + S1^2*S4*S7^2 + S8*S1^2*S5^2 - 2*S1^2*S5*S6*S7 + S1^2*S6^3 + 2*S8*S1*S2*S3*S6 - 2*S1*S2*S3*S7^2 - 2*S8*S1*S2*S4*S5 + 2*S1*S2*S4*S6*S7 + 2*S1*S2*S5^2*S7 - 2*S1*S2*S5*S6^2 - 2*S8*S1*S3^2*S5 + 2*S1*S3^2*S6*S7 + 2*S8*S1*S3*S4^2 - 4*S1*S3*S4*S6^2 + 2*S1*S3*S5^2*S6 - 2*S1*S4^3*S7 + 4*S1*S4^2*S5*S6 - 2*S1*S4*S5^3 - S8*S2^3*S6 + S2^3*S7^2 + 2*S8*S2^2*S3*S5 - 2*S2^2*S3*S6*S7 + S8*S2^2*S4^2 - 4*S2^2*S4*S5*S7 + 2*S2^2*S4*S6^2 + S2^2*S5^2*S6 - 3*S8*S2*S3^2*S4 + 2*S2*S3^2*S5*S7 + S2*S3^2*S6^2 + 4*S2*S3*S4^2*S7 - 2*S2*S3*S4*S5*S6 - 2*S2*S3*S5^3 - 3*S2*S4^3*S6 + 3*S2*S4^2*S5^2 + S0*S8*S2*S4*S6 - S0*S2*S4*S7^2 - S0*S8*S2*S5^2 + 2*S0*S2*S5*S6*S7 - S0*S2*S6^3 + S8*S3^4 - 2*S3^3*S4*S7 - 2*S3^3*S5*S6 + 3*S3^2*S4^2*S6 + 3*S3^2*S4*S5^2 - S0*S8*S3^2*S6 + S0*S3^2*S7^2 - 4*S3*S4^3*S5 + 2*S0*S8*S3*S4*S5 - 2*S0*S3*S4*S6*S7 - 2*S0*S3*S5^2*S7 + 2*S0*S3*S5*S6^2 + S4^5 - S0*S8*S4^3 + 2*S0*S4^2*S5*S7 + S0*S4^2*S6^2 - 3*S0*S4*S5^2*S6 + S0*S5^4);
-
-if abs(den_pol) < 1e-4
-    den_pol = 1e-4;
+Wei = X >= a & X <= b;
+if ~any(Wei)
+    error('FML:NoSmoothingData','No observations fall in the smoothing interval.');
 end
-
-beta_2 = (- T4*S1^2*S5*S7 + S8*T3*S1^2*S5 + T4*S1^2*S6^2 - T3*S1^2*S6*S7 - S8*T2*S1^2*S6 + T2*S1^2*S7^2 + T4*S1*S2*S4*S7 - S8*T3*S1*S2*S4 - T4*S1*S2*S5*S6 + T3*S1*S2*S5*S7 + S8*T1*S1*S2*S6 - T1*S1*S2*S7^2 + T4*S1*S3^2*S7 - S8*T3*S1*S3^2 - 3*T4*S1*S3*S4*S6 + T3*S1*S3*S4*S7 + 2*S8*T2*S1*S3*S4 + T4*S1*S3*S5^2 + T3*S1*S3*S5*S6 - 2*T2*S1*S3*S5*S7 - S8*T1*S1*S3*S5 + T1*S1*S3*S6*S7 + S8*T0*S1*S3*S6 - T0*S1*S3*S7^2 + T4*S1*S4^2*S5 + T3*S1*S4^2*S6 - 2*T2*S1*S4^2*S7 - 2*T3*S1*S4*S5^2 + 2*T2*S1*S4*S5*S6 + T1*S1*S4*S5*S7 - S8*T0*S1*S4*S5 - T1*S1*S4*S6^2 + T0*S1*S4*S6*S7 + T0*S1*S5^2*S7 - T0*S1*S5*S6^2 - T4*S2^2*S3*S7 + S8*T3*S2^2*S3 + T4*S2^2*S4*S6 - T3*S2^2*S4*S7 - S8*T0*S2^2*S6 + T0*S2^2*S7^2 + T4*S2*S3^2*S6 - S8*T2*S2*S3^2 - T3*S2*S3*S4*S6 + 2*T2*S2*S3*S4*S7 - S8*T1*S2*S3*S4 - T3*S2*S3*S5^2 + T1*S2*S3*S5*S7 + S8*T0*S2*S3*S5 - T0*S2*S3*S6*S7 - T4*S2*S4^3 + 2*T3*S2*S4^2*S5 - T2*S2*S4^2*S6 + T1*S2*S4^2*S7 + S8*T0*S2*S4^2 - T1*S2*S4*S5*S6 - 3*T0*S2*S4*S5*S7 +...
-          T0*S2*S4*S6^2 + T0*S2*S5^2*S6 + S0*T4*S2*S5*S7 - S0*S8*T3*S2*S5 - S0*T4*S2*S6^2 + S0*T3*S2*S6*S7 + S0*S8*T2*S2*S6 - S0*T2*S2*S7^2 - T4*S3^3*S5 + S8*T1*S3^3 + T4*S3^2*S4^2 + T3*S3^2*S4*S5 - 2*T1*S3^2*S4*S7 - S8*T0*S3^2*S4 + T2*S3^2*S5^2 - T1*S3^2*S5*S6 + T0*S3^2*S5*S7 - T3*S3*S4^3 - 2*T2*S3*S4^2*S5 + 2*T1*S3*S4^2*S6 + T0*S3*S4^2*S7 + T1*S3*S4*S5^2 - S0*T4*S3*S4*S7 + S0*S8*T3*S3*S4 - T0*S3*S5^3 + S0*T4*S3*S5*S6 - S0*T3*S3*S5*S7 - S0*S8*T1*S3*S6 + S0*T1*S3*S7^2 + T2*S4^4 - T1*S4^3*S5 - T0*S4^3*S6 + T0*S4^2*S5^2 + S0*T4*S4^2*S6 - S0*S8*T2*S4^2 - S0*T4*S4*S5^2 - S0*T3*S4*S5*S6 + 2*S0*T2*S4*S5*S7 + S0*S8*T1*S4*S5 - S0*T1*S4*S6*S7 + S0*T3*S5^3 - S0*T2*S5^2*S6 - S0*T1*S5^2*S7 + S0*T1*S5*S6^2)/...
-         den_pol;
-beta_3 = (S4^4*T1 + S1^2*S6^2*T3 + S2^2*S5^2*T3 + S3^2*S4^2*T3 + S0*S5^3*T2 - S2*S5^3*T0 - S1*S4^3*T4 - S2*S4^3*T3 - S3*S4^3*T2 - S4^3*S5*T0 - S3^3*S4*T4 + S3^3*S8*T0 + S2^3*S7*T4 - S2^3*S8*T3 - S0*S2*S6^2*T3 + S0*S4*S6^2*T1 - S1*S3*S6^2*T1 - S1*S4*S6^2*T0 + S2*S3*S6^2*T0 - S0*S3*S5^2*T4 - S0*S4*S5^2*T3 - S0*S5^2*S6*T1 + S1*S2*S5^2*T4 - 2*S1*S4*S5^2*T2 + S1*S5^2*S6*T0 - S2*S3*S5^2*T2 + S2*S4*S5^2*T1 + 2*S3*S4*S5^2*T0 + S0*S4^2*S5*T4 - S0*S4^2*S8*T1 + 2*S1*S4^2*S5*T3 + S1*S4^2*S6*T2 - S1*S4^2*S7*T1 + S1*S4^2*S8*T0 + 2*S2*S3*S4^2*T4 + 2*S2*S4^2*S5*T2 - 2*S2*S4^2*S6*T1 + S2*S4^2*S7*T0 - 2*S3*S4^2*S5*T1 + S3*S4^2*S6*T0 + S0*S3^2*S7*T4 - S0*S3^2*S8*T3 + S1*S3^2*S6*T4 - S1*S3^2*S8*T2 + S2*S3^2*S5*T4 - S2*S3^2*S8*T1 + S3^2*S4*S5*T2 + S3^2*S4*S6*T1 - S3^2*S4*S7*T0 - 2*S3^2*S5*S6*T0 - S2^2*S3*S6*T4 + S2^2*S3*S8*T2 - 2*S2^2*S4*S5*T4 + 2*S2^2*S4*S6*T3 - S2^2*S4*S7*T2 + S2^2*S4*S8*T1 - S2^2*S5*S7*T1 + S2^2*S5*S8*T0 - S2^2*S6*S7*T0 + S1^2*S4*S7*T4 - S1^2*S4*S8*T3 -...
-          S1^2*S5*S6*T4 + S1^2*S5*S8*T2 - S1^2*S6*S7*T2 - S0*S2*S4*S7*T4 + S0*S2*S4*S8*T3 + S0*S2*S5*S6*T4 - S0*S2*S5*S8*T2 + S0*S2*S6*S7*T2 - S0*S3*S4*S6*T4 + S0*S3*S4*S8*T2 + 2*S0*S3*S5*S6*T3 - S0*S3*S5*S7*T2 + S0*S3*S5*S8*T1 - S0*S3*S6*S7*T1 - S0*S4*S5*S6*T2 + S0*S4*S5*S7*T1 - 2*S1*S2*S3*S7*T4 + 2*S1*S2*S3*S8*T3 + S1*S2*S4*S6*T4 - S1*S2*S4*S8*T2 - 2*S1*S2*S5*S6*T3 + S1*S2*S5*S7*T2 - S1*S2*S5*S8*T1 + S1*S2*S6*S7*T1 - 2*S1*S3*S4*S6*T3 + S1*S3*S4*S7*T2 + S1*S3*S4*S8*T1 + S1*S3*S5*S6*T2 - S1*S3*S5*S8*T0 + S1*S3*S6*S7*T0 + S1*S4*S5*S6*T1 - S1*S4*S5*S7*T0 - 2*S2*S3*S4*S5*T3 - S2*S3*S4*S6*T2 + S2*S3*S4*S7*T1 - 2*S2*S3*S4*S8*T0 + S2*S3*S5*S6*T1 + S2*S3*S5*S7*T0)/...
-         den_pol;
-beta_4 = (- T4*S1^2*S4*S6 + S7*T3*S1^2*S4 + T4*S1^2*S5^2 - T3*S1^2*S5*S6 - S7*T2*S1^2*S5 + T2*S1^2*S6^2 + 2*T4*S1*S2*S3*S6 - 2*S7*T3*S1*S2*S3 - 2*T4*S1*S2*S4*S5 + T3*S1*S2*S4*S6 + S7*T2*S1*S2*S4 + T3*S1*S2*S5^2 - T2*S1*S2*S5*S6 + S7*T1*S1*S2*S5 - T1*S1*S2*S6^2 - 2*T4*S1*S3^2*S5 + T3*S1*S3^2*S6 + S7*T2*S1*S3^2 + 2*T4*S1*S3*S4^2 - 3*T2*S1*S3*S4*S6 - S7*T1*S1*S3*S4 + T2*S1*S3*S5^2 + T1*S1*S3*S5*S6 + S7*T0*S1*S3*S5 - T0*S1*S3*S6^2 - T3*S1*S4^3 + T2*S1*S4^2*S5 + T1*S1*S4^2*S6 - S7*T0*S1*S4^2 - T1*S1*S4*S5^2 + 2*T0*S1*S4*S5*S6 - T0*S1*S5^3 - T4*S2^3*S6 + S7*T3*S2^3 + 2*T4*S2^2*S3*S5 - T3*S2^2*S3*S6 - S7*T2*S2^2*S3 + T4*S2^2*S4^2 - 2*T3*S2^2*S4*S5 + T2*S2^2*S4*S6 - S7*T1*S2^2*S4 + T1*S2^2*S5*S6 - S7*T0*S2^2*S5 + T0*S2^2*S6^2 - 3*T4*S2*S3^2*S4 + T3*S2*S3^2*S5 + T2*S2*S3^2*S6 + S7*T1*S2*S3^2 + 2*T3*S2*S3*S4^2 + 2*S7*T0*S2*S3*S4 - 2*T1*S2*S3*S5^2 - 2*T0*S2*S3*S5*S6 - T2*S2*S4^3 + T1*S2*S4^2*S5 - 2*T0*S2*S4^2*S6 + 2*T0*S2*S4*S5^2 + S0*T4*S2*S4*S6 - S0*S7*T3*S2*S4 -...
-          S0*T4*S2*S5^2 + S0*T3*S2*S5*S6 + S0*S7*T2*S2*S5 - S0*T2*S2*S6^2 + T4*S3^4 - T3*S3^3*S4 - T2*S3^3*S5 - T1*S3^3*S6 - S7*T0*S3^3 + T2*S3^2*S4^2 + 2*T1*S3^2*S4*S5 + 2*T0*S3^2*S4*S6 + T0*S3^2*S5^2 - S0*T4*S3^2*S6 + S0*S7*T3*S3^2 - T1*S3*S4^3 - 3*T0*S3*S4^2*S5 + 2*S0*T4*S3*S4*S5 - S0*T3*S3*S4*S6 - S0*S7*T2*S3*S4 - S0*T3*S3*S5^2 + S0*T2*S3*S5*S6 - S0*S7*T1*S3*S5 + S0*T1*S3*S6^2 + T0*S4^4 - S0*T4*S4^3 + S0*T3*S4^2*S5 + S0*T2*S4^2*S6 + S0*S7*T1*S4^2 - S0*T2*S4*S5^2 - 2*S0*T1*S4*S5*S6 + S0*T1*S5^3)/...
-         den_pol;
-
-f_qua_2 = zeros(length(X),1);
-f_qua_4 = zeros(length(X),1);
-for i = 1:length(X) 
-    if X(i) >= a && X(i) <=b
-        f_qua_2(i) = 2*beta_2 + 6*beta_3*X(i) + 12*beta_4*X(i)^2;
-        f_qua_4(i) = 24*beta_4;
-    end
+hCV = select_pilot_bandwidth(X,Y,a,b);
+fpilot = zeros(n,1);
+WV = zeros(n,n);
+for i = find(Wei)'
+    [beta,WV(i,:)] = fml_local_polynomial(X,Y,X(i),hCV,1);
+    fpilot(i) = beta(1);
 end
+nu = n-2*trace(WV)+sum(WV(:).^2);
+if ~isfinite(nu) || nu <= 0
+    error('FML:InvalidPilot','The smoothing variance pilot has no positive residual degrees of freedom.');
+end
+Var = sum((Y-fpilot).^2.*Wei)/nu;
 
-Theta_24 = sum(f_qua_2.*f_qua_4.*(a<=X&X<=b))/length(X);
-
-if Theta_24>0
+% Unweighted global quartic pilot, equivalent to the old normal equations
+% before their determinant was artificially clamped to 1e-4.
+center = mean(X);
+scale = max(abs(X-center));
+z = (X-center)/scale;
+B = z.^(0:4);
+[Q,R] = qr(B,0);
+if any(abs(diag(R)) <= max(size(B))*eps(norm(R,inf)))
+    error('FML:SingularSmoother','The quartic bandwidth pilot is rank deficient.');
+end
+c = R\(Q'*Y);
+f_qua_2 = (2*c(3)+6*c(4)*z+12*c(5)*z.^2)/scale^2;
+f_qua_4 = repmat(24*c(5)/scale^4,n,1);
+Theta_24 = sum(f_qua_2.*f_qua_4.*Wei)/n;
+if Theta_24 > 0
     C_2K = (15/(16*sqrt(pi)))^(1/7);
 else
     C_2K = (3/(8*sqrt(pi)))^(1/7);
 end
-hCV3 = C_2K * (Var / (length(X) * abs(Theta_24)))^(1/7); 
 if Theta_24 == 0
     hCV3 = 2*(b-a);
+else
+    hCV3 = C_2K*(Var/(n*abs(Theta_24)))^(1/7);
 end
-
-fCV3 = zeros(length(X),1); 
-ffCV3 = zeros(length(X),1);
-
-for i = 1:length(X)
-    if X(i) >= a && X(i) <=b      
-    a0 = normpdf((X-X(i))./hCV3)./hCV3;
-    a1 = (X-X(i)).*a0;
-    a2 = (X-X(i)).*a1;
-    a3 = (X-X(i)).*a2;
-    a4 = (X-X(i)).*a3;
-    a5 = (X-X(i)).*a4;
-    a6 = (X-X(i)).*a5;
-    
-    S0 = sum(a0);
-    S1 = sum(a1);
-    S2 = sum(a2);
-    S3 = sum(a3);
-    S4 = sum(a4);
-    S5 = sum(a5);
-    S6 = sum(a6);
-    
-    T0 = sum(a0.*Y);
-    T1 = sum(a1.*Y); 
-    T2 = sum(a2.*Y); 
-    T3 = sum(a3.*Y);
-    
-    fCV3(i) = 2*(T3*(- S5*S1^2 + S4*S1*S2 + S1*S3^2 - S2^2*S3 + S0*S5*S2 - S0*S4*S3)...
-                -T0*(- S6*S2^2 + S5*S2*S3 + S2*S4^2 - S3^2*S4 + S1*S6*S3 - S1*S5*S4)...
-                -T1*(S3^3 - S0*S3*S6 + S0*S4*S5 + S1*S2*S6 - S1*S3*S5 - S2*S3*S4)...
-                +T2*(S6*S1^2 - 2*S1*S3*S4 + S2*S3^2 + S0*S4^2 - S0*S2*S6))...
-               /(S6*S1^2*S4 - S1^2*S5^2 - 2*S6*S1*S2*S3 + 2*S1*S2*S4*S5 + 2*S1*S3^2*S5 -...
-               2*S1*S3*S4^2 + S6*S2^3 - 2*S2^2*S3*S5 - S2^2*S4^2 + 3*S2*S3^2*S4 - S0*S6*S2*S4 + S0*S2*S5^2 - S3^4 + S0*S6*S3^2 - 2*S0*S3*S4*S5 + S0*S4^3);            
-    
-    ffCV3(i) = 6*(T3*(S4*S1^2 - 2*S1*S2*S3 + S2^3 - S0*S4*S2 + S0*S3^2)...
-        -T0*(S5*S2^2 - 2*S2*S3*S4 + S3^3 - S1*S5*S3 + S1*S4^2)...
-        +T2*(- S5*S1^2 + S4*S1*S2 + S1*S3^2 - S2^2*S3 + S0*S5*S2 - S0*S4*S3)...
-        +T1*(- S2^2*S4 + S2*S3^2 + S1*S5*S2 - S1*S3*S4 - S0*S5*S3 + S0*S4^2))...
-    /(S6*S1^2*S4 - S1^2*S5^2 - 2*S6*S1*S2*S3 + 2*S1*S2*S4*S5 + 2*S1*S3^2*S5 - 2*S1*S3*S4^2 +...
-    S6*S2^3 - 2*S2^2*S3*S5 - S2^2*S4^2 + 3*S2*S3^2*S4 - S0*S6*S2*S4 + S0*S2*S5^2 - S3^4 + S0*S6*S3^2 - 2*S0*S3*S4*S5 + S0*S4^3);
-    end
+check_bandwidth(hCV3);
+fCV3 = zeros(n,1);
+ffCV3 = zeros(n,1);
+for i = find(Wei)'
+    beta = fml_local_polynomial(X,Y,X(i),hCV3,3);
+    fCV3(i) = 2*beta(3);
+    ffCV3(i) = 6*beta(4);
 end
-
-Theta1 = sum(fCV3.^2.*Wei)/length(X);
-h1 = (Var./(2.*sqrt(pi).*Theta1.*length(X))).^(1/5);
+Theta1 = sum(fCV3.^2.*Wei)/n;
+Theta2 = sum(ffCV3.^2.*Wei)/n;
 if Theta1 == 0
     h1 = 2*(b-a);
+else
+    h1 = (Var/(2*sqrt(pi)*Theta1*n))^(1/5);
 end
-
-Theta2 = sum(ffCV3.^2.*Wei)/length(X);
-h2 = 0.8843.*(Var./(Theta2.*length(X))).^(1/7);
 if Theta2 == 0
     h2 = 2*(b-a);
+else
+    h2 = 0.8843*(Var/(Theta2*n))^(1/7);
+end
+check_bandwidth(h1);
+check_bandwidth(h2);
+log_lambda = -2*log(n);
+% The derivative historically used the number of distinct times for lambda.
+log_lambda_derivative = -2*log(n_unique);
+for i = 1:numel(t)
+    [beta,~,logdet] = fml_local_polynomial(X,Y,t(i),h1,1);
+    % Raw linear det already cancels h^(-2) against dx^2. Thus dividing
+    % raw moments by J and using u=dx/h gives this normalized determinant.
+    logdet = logdet-2*log(n);
+    if strcmp(moment_convention,'clustering')
+        logdet = logdet-2*log(h1);
+    end
+    f1(i) = beta(1)*ridge_factor(logdet,log_lambda);
+    [beta,~,logdet] = fml_local_polynomial(X,Y,t(i),h2,2);
+    f2(i) = beta(2)*ridge_factor(logdet,log_lambda_derivative);
+end
+if any(~isfinite(f1)) || any(~isfinite(f2))
+    error('FML:NonfiniteSmoother','The local polynomial estimates are nonfinite.');
+end
 end
 
-delta = length(unique(X))^(-2);
-for i = 1:length(t)
-    a0 = normpdf((X-t(i))./h1)./h1;
-    a1 = (X-t(i)).*a0;
-    a2 = (X-t(i)).*a1;
-    
-    S0 = sum(a0);
-    S1 = sum(a1);
-    S2 = sum(a2);
-    T0 = sum(a0.*Y);
-    T1 = sum(a1.*Y);    
-    den = S0*S2-S1^2;
-    if den>0 && den<delta
-        den = den+delta;
-    elseif den<0 && den>-delta
-        den = den-delta;
-    end
-    f1(i) = (T0*S2-T1*S1)/den;
-    
-    a0 = normpdf((X-t(i))./h2)./h2;
-    a1 = (X-t(i)).*a0;
-    a2 = (X-t(i)).*a1;
-    a3 = (X-t(i)).*a2;
-    a4 = (X-t(i)).*a3;
-    
-    S0 = sum(a0);
-    S1 = sum(a1);
-    S2 = sum(a2);
-    S3 = sum(a3);
-    S4 = sum(a4);  
-    T0 = sum(a0.*Y);
-    T1 = sum(a1.*Y);
-    T2 = sum(a2.*Y);   
-    den = S4*S1^2 - 2*S1*S2*S3 + S2^3 - S0*S4*S2 + S0*S3^2;   
-    if den>0 && den<delta
-        den = den+delta;
-    elseif den<0 && den>-delta
-        den = den-delta;
-    end
-    f2(i) = (T2*(S0*S3 - S1*S2)+T0*(S1*S4 - S2*S3)-T1*(- S2^2 + S0*S4))/den;
+function check_bandwidth(h)
+if ~isreal(h) || ~isfinite(h) || h <= 0
+    error('FML:InvalidBandwidth','The plug-in smoother produced a nonpositive or nonfinite bandwidth.');
+end
 end
 
+function h = select_pilot_bandwidth(X,Y,a,b)
+% Search the original leave-one-out loss across scales before refining one
+% local bracket. Unsupported candidates are excluded, not interpolated.
+width = b-a;
+spacing = diff(unique(X));
+spacing = median(spacing(spacing > 0));
+lower = max(spacing/2,sqrt(eps)*width);
+upper = width;
+if ~isfinite(lower) || ~isfinite(upper) || lower <= 0 || lower >= upper
+    error('FML:InvalidPilotRange', ...
+        'The smoothing interval must be wide enough relative to the observation spacing.');
+end
+h_grid = unique(logspace(log10(lower),log10(upper),20));
+loss = Inf(size(h_grid));
+for k = 1:numel(h_grid)
+    candidate = CVloss(X,Y,h_grid(k),a,b);
+    if isreal(candidate) && isfinite(candidate)
+        loss(k) = candidate;
+    end
+end
+[best_loss,best] = min(loss);
+if ~isfinite(best_loss)
+    error('FML:NoValidSmoothingBandwidth', ...
+        'No pilot bandwidth supports finite leave-one-out local-linear fits.');
+end
+h = h_grid(best);
+left = max(1,best-1);
+right = min(numel(h_grid),best+1);
+if left < right
+    opt = optimset('Display','off','MaxIter',20);
+    try
+        [log_h,refined_loss,exitflag] = fminbnd( ...
+            @(log_h) CVloss(X,Y,exp(log_h),a,b), ...
+            log(h_grid(left)),log(h_grid(right)),opt);
+        if exitflag > 0 && isreal(refined_loss) && isfinite(refined_loss) && ...
+                isfinite(log_h) && refined_loss <= best_loss
+            h = exp(log_h);
+        elseif exitflag <= 0 || ~isreal(refined_loss) || ~isfinite(refined_loss)
+            warning('FML:SmoothingPilotRefinement', ...
+                'Pilot refinement did not converge to a finite fit; retaining the grid minimum.');
+        end
+    catch err
+        warning('FML:SmoothingPilotRefinement', ...
+            'Pilot refinement failed; retaining the grid minimum (%s).',err.identifier);
+    end
+end
+if h <= lower*(1+1e-3) || h >= upper*(1-1e-3)
+    warning('FML:SmoothingPilotBoundary', ...
+        'The pilot bandwidth is at the search boundary; inspect the observation spacing and interval.');
+end
+end
+
+function factor = ridge_factor(logdet,log_lambda)
+% det/(det+lambda) avoids underflow and treats a zero determinant's sign as +.
+if logdet < log_lambda
+    ratio = exp(logdet-log_lambda);
+    factor = ratio/(1+ratio);
+else
+    factor = 1;
+end
 end
 

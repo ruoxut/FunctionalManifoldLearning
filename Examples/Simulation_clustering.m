@@ -16,6 +16,8 @@
 
 % Author: Ruoxu Tan; date: 2022/Oct/29; Matlab version: R2020a.
 
+addpath(genpath(fullfile(fileparts(mfilename('fullpath')),'..','Source_code')));
+
 n_all = [300 500]; % Sample sizes
 K_all = [13 15 18]; % K-nearest neighbours
 p = 200; % Number of dense time points
@@ -32,12 +34,6 @@ for ind_1 = 1:length(n_all)
     t_obs = linspace(0,1,p_obs)'; % Time interval where we observe functional data
 
     n_1 = n/2;% Half of inviduals forms one group.
-
-    D_FPTU_res = cell(n_rep,length(K_all)); % To store the resulting proximity graphs.
-    D_FPTU_nonres = cell(n_rep,length(K_all));
-    D_PTU_PCA_res = cell(n_rep,length(K_all));
-    D_PTU_PCA_nonres = cell(n_rep,length(K_all));
-    D_Isomap = cell(n_rep,length(K_all));
 
     G_FPTU_res = cell(n_rep,length(K_all));% To store the resulting group labels.
     G_FPTU_nonres = cell(n_rep,length(K_all));
@@ -100,7 +96,7 @@ for ind_1 = 1:length(n_all)
             if A(i) == 0
                 gamma = t_obs;
             else
-                gamma = (exp(A(i).*t_obs)-1)./(exp(A(i))-1);
+                gamma = expm1(A(i).*t_obs)./expm1(A(i));
             end
             X_obs(:,i) = abs(B(i)).*interp1(t,mu,gamma);
         end
@@ -122,10 +118,9 @@ for ind_1 = 1:length(n_all)
        
         % Presmoothing using the ridged local linear estimator.
         parfor i = 1:n
-            [~,X(:,i),~]  = loclin( t_obs,X_obs(:,i),min(t_obs),max(t_obs) );
+            [~,X(:,i),~]  = loclin( t_obs,X_obs(:,i),min(t_obs),max(t_obs),'clustering' );
         end
        
-        t = t';
         X = X';
         %% Clustering
         G = zeros(1,n); % Group labels  
@@ -143,17 +138,17 @@ for ind_1 = 1:length(n_all)
             K = K_all(ind_2);
 
             % FPTU/FPU_PCA dimension reduction and graph clustering
-            [ D_FPTU_res{n_rep_ind,ind_2},~ ] = FPTU_adj_knn( t,X,K,K,d_est,1 );
-            [ X_d_FPTU_res,G_FPTU_res{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_res{n_rep_ind,ind_2},g,d_est,n_start );
+            D_FPTU_res = FPTU_adj_knn( t,X,K,K,d_est,1 );
+            [ X_d_FPTU_res,G_FPTU_res{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_res,g,d_est,n_start );
 
-            [ D_FPTU_nonres{n_rep_ind,ind_2},~ ] = FPTU_adj_knn( t,X,K,K,d_est,0 );
-            [ X_d_FPTU_nres,G_FPTU_nonres{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_nonres{n_rep_ind,ind_2},g,d_est,n_start );
+            D_FPTU_nonres = FPTU_adj_knn( t,X,K,K,d_est,0 );
+            [ X_d_FPTU_nres,G_FPTU_nonres{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_FPTU_nonres,g,d_est,n_start );
 
-            [ D_PTU_PCA_res{n_rep_ind,ind_2} ] = PTU_PCA( t,X,K,K,d_est,1 );
-            [ X_d_PTU_PCA_res,G_PTU_PCA_res{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_PTU_PCA_res{n_rep_ind,ind_2},g,d_est,n_start );
+            D_PTU_PCA_res = PTU_PCA( t,X,K,K,d_est,1 );
+            [ X_d_PTU_PCA_res,G_PTU_PCA_res{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_PTU_PCA_res,g,d_est,n_start );
 
-            [ D_PTU_PCA_nonres{n_rep_ind,ind_2} ] = PTU_PCA( t,X,K,K,d_est,0 );
-            [ X_d_PTU_PCA_nres,G_PTU_PCA_nonres{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_PTU_PCA_nonres{n_rep_ind,ind_2},g,d_est,n_start );
+            D_PTU_PCA_nonres = PTU_PCA( t,X,K,K,d_est,0 );
+            [ X_d_PTU_PCA_nres,G_PTU_PCA_nonres{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_PTU_PCA_nonres,g,d_est,n_start );
 
 
             ADI_FPTU_res(n_rep_ind,ind_2) = rand_index(G,G_FPTU_res{n_rep_ind,ind_2},'adjusted'); 
@@ -162,15 +157,17 @@ for ind_1 = 1:length(n_all)
             ADI_PTU_PCA_nonres(n_rep_ind,ind_2) = rand_index(G,G_PTU_PCA_nonres{n_rep_ind,ind_2},'adjusted'); 
 
             % Functional Isomap and graph clustering
-            [ D_Isomap{n_rep_ind,ind_2},~ ] = FIsomap( t,X,K );
-            [ X_d_FIsomap,G_Isomap{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_Isomap{n_rep_ind,ind_2},g,d_est,n_start );
+            D_Isomap = FIsomap( t,X,K );
+            [ X_d_FIsomap,G_Isomap{n_rep_ind,ind_2},~ ] = graph_clustering( t,X,D_Isomap,g,d_est,n_start );
  
             ADI_Isomap(n_rep_ind,ind_2) = rand_index(G,G_Isomap{n_rep_ind,ind_2},'adjusted'); 
 
        end
        
        % DHP clustering
-       [G_DHP{1,n_rep_ind},~,~,ADI_DHP(n_rep_ind,1)] = Proj_Kmeans(X',n_start,G,4,0.2,1);
+       assert(size(X,1) == numel(G),'Curve and label counts must match.');
+       [G_DHP{1,n_rep_ind},~,~,ADI_DHP(n_rep_ind,1)] = Proj_Kmeans(X,n_start,G,4,0.2,1);
+       assert(numel(G_DHP{1,n_rep_ind}) == numel(G),'DHP must return one label per curve.');
 
        % FPCA and k-means clustering
        [X_d_PCA,~,~] = FPCA(t,X);

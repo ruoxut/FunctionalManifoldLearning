@@ -1,60 +1,12 @@
-function [mu] = FLLE(t,X,Z,x,K_pca,h)
-% Functional local linear estimator on tangent space
-% Input:
-% t: 1*p time interval;
-% X: n*p covariate matrix, each row contains function values of an individual; 
-% Z: n*d outcome matrix, each row contains the outcome of an individual;
-% x: 1*p function values where we examine the estimator;
-% K_pca: number of nearest neighbours used in local PCA;
-% h: bandwidth;
-% Output:
-% mu: 1*d estimated conditional mean at x.
+function mu = FLLE(t,X,Z,x,K_pca,h)
+% Functional local linear estimator on the estimated tangent space.
+% The six-argument interface is unchanged. Repeated predictions may reuse
+% FLLE_prepare(t,X,x,K_pca,d), then call FLLE_predict(geometry,Z,h).
 
-if length(t) ~= size(X,2) || size(X,1)~=size(Z,1)
-    error('Dimensions of the input data do not match.')
+if ~isnumeric(Z) || ~isreal(Z) || ~ismatrix(Z) || ...
+        size(Z,1) ~= size(X,1) || isempty(Z) || any(~isfinite(Z(:)))
+    error('FLLE:InvalidResponse','Z must be a finite n-by-d numeric matrix.')
 end
-
-if iscolumn(t)
-    t = t';
-end
-
-d = size(Z,2);
-n = size(X,1);
-
-if K_pca < d
-    error('K_pca is smaller than the intrinsic dimension.')
-end  
-
-% Tangent space at x
-delta_t = mean(diff(t));
-G_x = sqrt(sum((X-x).^2.*delta_t,2));
-[~,ind] = sort(G_x);
-mu_x = mean(X(ind(1:K_pca),:),1);
-X_x_cen = X(ind(1:K_pca),:)-mu_x; 
-[~,~,phi_x] = svd(X_x_cen,'econ');
-phi_x = phi_x(:,1:d);
-norm_phi_x = sqrt(sum(phi_x.^2.*delta_t,1));       
-phi_x = phi_x ./ norm_phi_x; 
-TM_x = phi_x'; % d*p matrix, each row contains a basis function
-
-X_mat = zeros(n,d+1);
-X_mat(:,1) = 1;
-for i = 1:n
-    X_mat(i,2:end) = sum((X(i,:)-x).*TM_x.*delta_t,2)';
-end
-
-w = normpdf(G_x./h)./(h^d);
-XW = X_mat' .* w';
-XWX = XW * X_mat;
-e_1 = zeros(1,d+1);
-e_1(1) = 1;
-
-if cond(XWX) > 1e3
-    mu = e_1 / (XWX + eye(d+1).*n^(-2));
-else
-    mu = e_1 / XWX;
-end
-
-mu = mu * XW * Z; 
-
+geometry = FLLE_prepare(t,X,x,K_pca,size(Z,2));
+mu = FLLE_predict(geometry,Z,h);
 end

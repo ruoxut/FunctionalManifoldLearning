@@ -9,20 +9,13 @@ function [G_adj] = Adj_Graph(t,X,delta)
 % G_adj: n*n adjacency matrix, (i,j)=1 (0) means i and j are adjecent (not adjecent).
 
 % Author: Ruoxu Tan; date: 2025/May; Matlab version: R2024b.
-if iscolumn(t)
-    t = t';
-end
-
-if length(t) ~= size(X,2)
-    error('Dimensions of the input functional data do not match.')
-end
-
-if delta <= 0 || delta > 1 
-    error('The tuning parameter must be in (0,1].')
-end
-
-delta_t = mean(diff(t));
+[~,delta_t] = fml_validate_grid(t,X);
+validateattributes(delta,{'numeric'},{'real','finite','scalar','>',0,'<=',1},mfilename,'delta');
 n = size(X,1);
+if n == 1
+    G_adj = 0;
+    return
+end
 
 G_ini = zeros(n,n);
 G_rank = zeros(n,n);
@@ -33,10 +26,18 @@ for i = 1:n
     end
 end
 for i = 1:n
-    [~,G_rank(i,:)] = sort(G_ini(i,:));
+    [~,ind] = sort(G_ini(i,:));
+    G_rank(i,:) = [i,ind(ind ~= i)];
 end
 
-G_ini_g = graph(G_ini);
+if any(G_ini(triu(true(n),1)) == 0)
+    % Adjacency-matrix construction discards zero-weight duplicate edges.
+    [edge_i,edge_j] = find(triu(true(n),1));
+    edge_weights = G_ini(sub2ind([n,n],edge_i,edge_j));
+    G_ini_g = graph(edge_i,edge_j,edge_weights,n);
+else
+    G_ini_g = graph(G_ini); % Preserve the original MST ordering in regular cases.
+end
 G_MST_g = minspantree(G_ini_g);
 G_MST = adjacency(G_MST_g);
 G_MST = full(G_MST);
@@ -55,14 +56,15 @@ for i = 1:n
 end
 
 num_test = 100;
+lambda = linspace(0,1,num_test)';
 
 for i = 1:n
     parfor j = i+1:n
         if G_MST(i,j) == 0
-            Z_lambda = linspace(0,1,num_test)'.*X(i,:)+(1-linspace(0,1,num_test)').*X(j,:);
+            Z_lambda = lambda.*X(i,:)+(1-lambda).*X(j,:);
             k = 1;
             while k <= num_test
-                if k*G_ini(i,j)/num_test <= r(j,1) || (num_test-k)*G_ini(i,j)/num_test <= r(i,1)
+                if lambda(k)*G_ini(i,j) <= r(j,1) || (1-lambda(k))*G_ini(i,j) <= r(i,1)
                     k = k + 1;
                 else     
                     s = 2;
